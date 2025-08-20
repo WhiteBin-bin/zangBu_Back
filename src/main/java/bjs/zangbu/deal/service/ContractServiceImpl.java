@@ -5,8 +5,10 @@ import bjs.zangbu.codef.service.CodefService;
 import bjs.zangbu.codef.service.CodefTwoFactorService;
 import bjs.zangbu.deal.dto.join.DealDocumentInfo;
 import bjs.zangbu.deal.dto.join.DealWithSaleType;
+import bjs.zangbu.deal.dto.request.AddressRequest;
 import bjs.zangbu.deal.dto.request.BuildingRegisterRequest;
 import bjs.zangbu.deal.dto.request.EstateRegistrationRequest;
+import bjs.zangbu.deal.dto.request.MemberRequest;
 import bjs.zangbu.deal.dto.response.BuildingRegisterResponse;
 import bjs.zangbu.deal.dto.response.DealResponse;
 import bjs.zangbu.deal.dto.response.EstateRegistrationResponse;
@@ -66,9 +68,13 @@ public class ContractServiceImpl implements ContractService {
         final DocumentType docType = DocumentType.ESTATE;
 
         //DB에서 데이터 가져와서 request 생성
-        EstateRegistrationRequest request = dealMapper.getEstateRegistrationRequest(buildingId);
+        //EstateRegistrationRequest request = dealMapper.getEstateRegistrationRequest(buildingId);
+        AddressRequest addr = dealMapper.getAddressRequest(buildingId);
+        MemberRequest member = dealMapper.getMemberRequest(memberId);
+        EstateRegistrationRequest request = EstateRegistrationRequest.addTwoRequest(addr, member);
         // codef에서 응답 가져오기
         String rawResponse = codefService.realEstateRegistrationLeader(request);
+        log.info("rawResponse: " + rawResponse);
         // pdf dto 파싱로직
         EstateRegistrationResponse dto = CodefConverter.parseDataToDto(
                 rawResponse, EstateRegistrationResponse.class);
@@ -82,7 +88,7 @@ public class ContractServiceImpl implements ContractService {
         // (추가)mongodb에 나머지 json 파싱해서 저장 -> 분석리포트를 위함
         documentToMongoService.saveJson(memberId, buildingId, docType, dto);
         /* 6) ncp 업로드 */
-        String key = "estate-Register/" + "/" + memberId + "/" + buildingId + ".pdf";
+        String key = "estate-Register" + "/" + memberId + "/" + buildingId + ".pdf";
         String url = binaryUploaderService.putPdfObject(BUCKET_NAME,key,pdfBytes);
 
         documentToMongoService.updatePdfMeta(memberId, buildingId,
@@ -96,17 +102,23 @@ public class ContractServiceImpl implements ContractService {
 
         final DocumentType docType = DocumentType.BUILDING_REGISTER;
         // 1) DB 조회
-        DealDocumentInfo deal = dealMapper.getDocumentInfo(buildingId);
+//        DealDocumentInfo deal = dealMapper.getDocumentInfo(buildingId);
         // request json 형식에 맞게 파싱
-        BuildingRegisterRequest request = BuildingRegisterRequest.from(deal);
+//        BuildingRegisterRequest request = BuildingRegisterRequest.from(deal);
+        AddressRequest addr = dealMapper.getAddressRequest(buildingId);
+        MemberRequest member = dealMapper.getMemberRequest(memberId);
+        BuildingRegisterRequest request = BuildingRegisterRequest.addTwoRequest(addr, member);
+        System.out.println("request = " + request);
         // 1차·2차가 섞여 있을 수 있는 응답(rawResponse)
         String rawResponse = codefTwoFactorService.generalBuildingLeader(request);
+        System.out.println("rawResponse = " + rawResponse);
         // dto로 파싱
         BuildingRegisterResponse dto =
                 CodefConverter.parseDataToDto(rawResponse, BuildingRegisterResponse.class);
 
         // PDF 바이트 추출
         byte[] pdfBytes = PdfUtil.decodePdfBytes(dto.getResOriGinalData());
+        log.info("pdfBytes = " + pdfBytes);
         if (pdfBytes == null || pdfBytes.length == 0) {
             log.warn("PDF bytes empty: buildingId={}, type={}", buildingId, docType);
             // 필요시: 예외/복구 로직
@@ -114,7 +126,7 @@ public class ContractServiceImpl implements ContractService {
         // (추가)mongodb에 나머지 json 파싱해서 저장 -> 분석리포트를 위함
         documentToMongoService.saveJson(memberId, buildingId, docType, dto);
         /* ncp 업로드*/
-        String key  = "building-register/" + "/" + memberId + "/" + buildingId + ".pdf";
+        String key  = "building-register" + "/" + memberId + "/" + buildingId + ".pdf";
         String url = binaryUploaderService.putPdfObject(BUCKET_NAME,key,pdfBytes);
 
         documentToMongoService.updatePdfMeta(memberId, buildingId,
